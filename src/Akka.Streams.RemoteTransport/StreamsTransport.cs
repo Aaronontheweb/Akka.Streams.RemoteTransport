@@ -82,10 +82,10 @@ namespace Akka.Streams.RemoteTransport
             var serverSource = System.TcpStream().Bind(Settings.Hostname, Settings.Port, Settings.Backlog)
                 .AddAttributes(ActorAttributes.CreateDispatcher(System.Settings.Config.GetString("akka.remote.use-dispatcher")));
 
-            //serverSource.RunForeach(connection =>
-            //{
-            //    connection.Flow.Join();
-            //});
+            serverSource.RunForeach(connection =>
+            {
+                connection.Flow.Join(StreamTransportFlows.ConnectionHandler(Settings));
+            });
         }
     }
 

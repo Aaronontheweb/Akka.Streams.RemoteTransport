@@ -11,7 +11,7 @@ using Xunit;
 
 namespace Akka.Streams.RemoteTransport.Tests
 {
-    public class StreamTransportFlowsSpecs : TestKit.Xunit2.TestKit
+    public class EncodingFlowSpecs : TestKit.Xunit2.TestKit
     {
         [Theory]
         [InlineData("foo", ByteOrder.BigEndian)]
