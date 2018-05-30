@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -12,6 +13,7 @@ using Akka.Dispatch;
 using Akka.Event;
 using Akka.Remote.Transport;
 using Akka.Streams.Dsl;
+using Akka.Util;
 using DotNetty.Common;
 
 namespace Akka.Streams.RemoteTransport
@@ -20,6 +22,11 @@ namespace Akka.Streams.RemoteTransport
     {
         public StreamsTransportSettings Settings { get; }
         protected readonly ILoggingAdapter Log;
+
+        /// <summary>
+        /// Handles to all of the current streams
+        /// </summary>
+        internal readonly ConcurrentSet<IActorRef> StreamRefs = new ConcurrentSet<IActorRef>();
 
         protected StreamsTransport(ActorSystem system, Config config)
         {
@@ -72,6 +79,30 @@ namespace Akka.Streams.RemoteTransport
             throw new NotImplementedException();
         }
 
+        private async Task StartClient(Address remoteAddress)
+        {
+            if (InternalTransport != TransportMode.Tcp)
+                throw new NotSupportedException("Currently Akka.Streams server supports only TCP tranport mode.");
+
+            var addressFamily = Settings.DnsUseIpv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork;
+
+           
+            var socketAddress = RemotingAddressHelpers.AddressToSocketAddress(remoteAddress);
+            socketAddress = await MapEndpointAsync(socketAddress).ConfigureAwait(false);
+
+            // TODO: socket options
+            var clientSource = System.TcpStream().OutgoingConnection(socketAddress, connectionTimeout:Settings.ConnectTimeout)
+                .AddAttributes(ActorAttributes.CreateDispatcher(System.Settings.Config.GetString("akka.remote.use-dispatcher")));
+
+            var joined = clientSource.JoinMaterialized(
+                    StreamTransportFlows.OutboundConnectionHandler(this, remoteAddress, socketAddress),
+                    (task, tuple) => (connectTask:task, associateTask:tuple.associateTask, inputRef:tuple.sourceRef))
+                .Join(Flow.Create<Google.Protobuf.ByteString>().Where(_ => true))
+                .Run(System.Materializer());
+
+            var outgoing = await joined.connectTask.ConfigureAwait(false);
+        }
+
         private void StartServer()
         {
             if (InternalTransport != TransportMode.Tcp)
@@ -84,8 +115,27 @@ namespace Akka.Streams.RemoteTransport
 
             serverSource.RunForeach(connection =>
             {
-                connection.Flow.Join(StreamTransportFlows.ConnectionHandler(Settings));
+                connection.Flow.Join(StreamTransportFlows.OutboundConnectionHandler(Settings));
             });
+        }
+
+        private async Task<IPEndPoint> MapEndpointAsync(EndPoint socketAddress)
+        {
+            IPEndPoint ipEndPoint;
+
+            if (socketAddress is DnsEndPoint dns)
+                ipEndPoint = await DnsToIpEndpoint(dns).ConfigureAwait(false);
+            else
+                ipEndPoint = (IPEndPoint)socketAddress;
+
+            if (ipEndPoint.Address.Equals(IPAddress.Any) || ipEndPoint.Address.Equals(IPAddress.IPv6Any))
+            {
+                // client hack
+                return ipEndPoint.AddressFamily == AddressFamily.InterNetworkV6
+                    ? new IPEndPoint(IPAddress.IPv6Loopback, ipEndPoint.Port)
+                    : new IPEndPoint(IPAddress.Loopback, ipEndPoint.Port);
+            }
+            return ipEndPoint;
         }
     }
 

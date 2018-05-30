@@ -15,15 +15,17 @@ namespace Akka.Streams.RemoteTransport
     /// </summary>
     public sealed class RemoteOutboundAssociationSink : GraphStageWithMaterializedValue<SinkShape<Google.Protobuf.ByteString>, Task<AssociationHandle>>
     {
-        private readonly EndPoint _remoteSocketAddress;
         private readonly Address _remoteAddress;
+        private readonly EndPoint _localAddress;
         private readonly StreamsTransport _transport;
+        private readonly IActorRef _sourceRef;
 
-        public RemoteOutboundAssociationSink(StreamsTransport transport, Address remoteAddress, EndPoint remoteSocketAddress)
+        public RemoteOutboundAssociationSink(StreamsTransport transport, Address remoteAddress, EndPoint localSocketAddress, IActorRef sourceRef)
         {
             _transport = transport;
             _remoteAddress = remoteAddress;
-            _remoteSocketAddress = remoteSocketAddress;
+            _localAddress = localSocketAddress;
+            _sourceRef = sourceRef;
             Shape = new SinkShape<Google.Protobuf.ByteString>(In);
         }
 
@@ -36,6 +38,8 @@ namespace Akka.Streams.RemoteTransport
         public Inlet<Google.Protobuf.ByteString> In { get; } = new Inlet<Google.Protobuf.ByteString>("Akka.Remote.Outbound.In");
 
         public override SinkShape<Google.Protobuf.ByteString> Shape { get; }
+
+        
 
         private class RemoteOutboundAssociationLogic : GraphStageLogic
         {
@@ -55,6 +59,12 @@ namespace Akka.Streams.RemoteTransport
                 SetHandler(_sink.In, () => Buffer(Grab(_sink.In)), Finish, OnUpstreamFailure);
             }
 
+            private static AssociationHandle CreateAssociationHandle(StreamsTransport transport, IActorRef sourceRef,
+                Address localAddress, Address remoteAddress)
+            {
+                return new StreamsAssociationHandle(localAddress, remoteAddress, sourceRef, transport);
+            }
+
             public override void PreStart()
             {
                 // keep going even if the upstream is finished
@@ -64,8 +74,28 @@ namespace Akka.Streams.RemoteTransport
                 // Request the first element
                 Pull(_sink.In);
 
-                var cb = GetAsyncCallback<IHandleEventListener>(SetListener);
-                //todo: create handle, invoke callback
+                var localAddress = RemotingAddressHelpers.MapSocketToAddress((IPEndPoint)_sink._localAddress,
+                    _sink._transport.SchemeIdentifier, _sink._transport.System.Name,
+                    _sink._transport.Settings.Hostname);
+
+                if (localAddress != null)
+                {
+                    var cb = GetAsyncCallback<IHandleEventListener>(SetListener);
+
+                    var handle = CreateAssociationHandle(_sink._transport, _sink._sourceRef, localAddress,
+                        _sink._remoteAddress);
+                    handle.ReadHandlerSource.Task.ContinueWith(tr =>
+                    {
+                        cb(tr.Result); // safely marshall back into the stage
+                    }, TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.NotOnCanceled | TaskContinuationOptions.NotOnFaulted);
+                }
+                else
+                {
+                    _sink._transport.System.Stop(_sink._sourceRef);
+                    FailStage(new InvalidAssociationException($"Unabled to parse [{_sink._localAddress}] into Akka.NET address."));
+                }
+
+               
             }
 
             private void SetListener(IHandleEventListener handleEventListener)
@@ -117,7 +147,8 @@ namespace Akka.Streams.RemoteTransport
             {
                 _listener?.Notify(_cleanShutdown
                     ? new Disassociated(DisassociateInfo.Shutdown)
-                    : new Disassociated(DisassociateInfo.Unknown));
+                    : new Disassociated(DisassociateInfo.Unknown)); 
+                _pendingMessages.Clear(); // don't leak memory, in case we're shutdown during startup
             }
         }
     }
