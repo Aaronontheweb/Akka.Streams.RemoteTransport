@@ -108,9 +108,11 @@ namespace Akka.Streams.RemoteTransport
 
             var fromRemoteActors = Decode(4, settings.MaxFrameSize, settings.ByteOrder).Via(ToProtobuf());
 
-            var finalOutput = new RemoteOutboundAssociationSink(transport, remoteAddress, remoteSocketAddr);
+            var transmissionRef = transmissionHandle.PreMaterialize(transport.StreamMaterializer);
 
-            var dsl = GraphDsl.Create(transmissionHandle, finalOutput, (@ref, task) => (sourceRef:@ref, associateTask:task),
+            var finalOutput = new RemoteOutboundAssociationSink(transport, remoteAddress, remoteSocketAddr, transmissionRef.Item1);
+
+            var dsl = GraphDsl.Create(transmissionRef.Item2, finalOutput, (@ref, task) => (sourceRef:@ref, associateTask:task),
                 (builder, localInput, remoteOutput) =>
                 {
                     // local stages

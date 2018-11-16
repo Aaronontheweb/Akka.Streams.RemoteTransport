@@ -92,7 +92,7 @@ namespace Akka.Streams.RemoteTransport
                 else
                 {
                     _sink._transport.System.Stop(_sink._sourceRef);
-                    FailStage(new InvalidAssociationException($"Unabled to parse [{_sink._localAddress}] into Akka.NET address."));
+                    FailStage(new InvalidAssociationException($"Unable to parse [{_sink._localAddress}] into Akka.NET address."));
                 }
 
                

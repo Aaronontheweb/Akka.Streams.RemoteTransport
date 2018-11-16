@@ -14,6 +14,7 @@ using Akka.Event;
 using Akka.Remote.Transport;
 using Akka.Streams.Dsl;
 using Akka.Util;
+using Akka.Util.Internal;
 using DotNetty.Common;
 
 namespace Akka.Streams.RemoteTransport
@@ -22,6 +23,8 @@ namespace Akka.Streams.RemoteTransport
     {
         public StreamsTransportSettings Settings { get; }
         protected readonly ILoggingAdapter Log;
+        internal readonly IMaterializer StreamMaterializer;
+        internal readonly IActorRef StreamSupervisor;
 
         /// <summary>
         /// Handles to all of the current streams
@@ -37,6 +40,14 @@ namespace Akka.Streams.RemoteTransport
             Log = Logging.GetLogger(System, GetType());
 
             SchemeIdentifier = (Settings.EnableSsl ? "ssl." : string.Empty) + Settings.TransportMode.ToString().ToLowerInvariant();
+            StreamSupervisor = system.AsInstanceOf<ExtendedActorSystem>().SystemActorOf(
+                Props.Create(() => new StreamsTransportSupervisor()), Uri.EscapeUriString(SchemeIdentifier)+"-supervisor");
+
+            // block here and get access to the materializer used for creating
+            // future stream actors
+            StreamMaterializer = StreamSupervisor
+                .Ask<IMaterializer>(StreamsTransportSupervisor.GetMaterializer.Instance, Settings.ConnectTimeout)
+                .Result;
         }
 
         public sealed override string SchemeIdentifier { get; protected set; }
@@ -115,7 +126,7 @@ namespace Akka.Streams.RemoteTransport
 
             serverSource.RunForeach(connection =>
             {
-                connection.Flow.Join(StreamTransportFlows.OutboundConnectionHandler(Settings));
+                connection.Flow.Join(StreamTransportFlows.OutboundConnectionHandler(Settings, connection.));
             });
         }
 
