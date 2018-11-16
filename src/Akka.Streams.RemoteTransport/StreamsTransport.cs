@@ -90,10 +90,10 @@ namespace Akka.Streams.RemoteTransport
             throw new NotImplementedException();
         }
 
-        private async Task StartClient(Address remoteAddress)
+        private async Task<AssociationHandle> StartClient(Address remoteAddress)
         {
             if (InternalTransport != TransportMode.Tcp)
-                throw new NotSupportedException("Currently Akka.Streams server supports only TCP tranport mode.");
+                throw new NotSupportedException("Currently Akka.Streams server supports only TCP transport mode.");
 
             var addressFamily = Settings.DnsUseIpv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork;
 
@@ -106,18 +106,18 @@ namespace Akka.Streams.RemoteTransport
                 .AddAttributes(ActorAttributes.CreateDispatcher(System.Settings.Config.GetString("akka.remote.use-dispatcher")));
 
             var joined = clientSource.JoinMaterialized(
-                    StreamTransportFlows.OutboundConnectionHandler(this, remoteAddress, socketAddress),
-                    (task, tuple) => (connectTask:task, associateTask:tuple.associateTask, inputRef:tuple.sourceRef))
+                    StreamTransportFlows.OutboundConnectionHandler(this, remoteAddress, socketAddress), (connectTask, associate) => (connectTask, associate))
                 .Join(Flow.Create<Google.Protobuf.ByteString>().Where(_ => true))
-                .Run(System.Materializer());
+                .Run(StreamMaterializer);
 
-            var outgoing = await joined.connectTask.ConfigureAwait(false);
+            await joined.connectTask.ConfigureAwait(false);
+            return await joined.associate.ConfigureAwait(false);
         }
 
         private void StartServer()
         {
             if (InternalTransport != TransportMode.Tcp)
-                throw new NotSupportedException("Currently Akka.Streams server supports only TCP tranport mode.");
+                throw new NotSupportedException("Currently Akka.Streams server supports only TCP transport mode.");
 
             var addressFamily = Settings.DnsUseIpv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork;
 

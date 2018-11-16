@@ -97,7 +97,7 @@ namespace Akka.Streams.RemoteTransport
                 .Select(x => Google.Protobuf.ByteString.CopyFrom(x.ToArray()));
         }
 
-        public static BidiFlow<ByteString, Google.Protobuf.ByteString, Google.Protobuf.ByteString, ByteString, (IActorRef sourceRef, Task<AssociationHandle> associateTask)>
+        public static BidiFlow<ByteString, Google.Protobuf.ByteString, Google.Protobuf.ByteString, ByteString, Task<AssociationHandle>>
             OutboundConnectionHandler(StreamsTransport transport, Address remoteAddress, EndPoint remoteSocketAddr)
         {
             var settings = transport.Settings;
@@ -112,25 +112,23 @@ namespace Akka.Streams.RemoteTransport
 
             var finalOutput = new RemoteOutboundAssociationSink(transport, remoteAddress, remoteSocketAddr, transmissionRef.Item1);
 
-            var dsl = GraphDsl.Create(transmissionRef.Item2, finalOutput, (@ref, task) => (sourceRef:@ref, associateTask:task),
-                (builder, localInput, remoteOutput) =>
-                {
-                    // local stages
-                    var compilerCeremony = builder.Add(Flow.Create<Google.Protobuf.ByteString>());
-                    var local = builder.Add(fromLocalActors);
-                    var merge = builder.Add(new Merge<Google.Protobuf.ByteString, Google.Protobuf.ByteString>(2, false));
-                    builder.From(localInput.Outlet).To(merge.In(0));
-                    builder.From(compilerCeremony.Outlet).To(merge.In(1));
-                    builder.From(merge.Out).To(local.Inlet);
+            var dsl = GraphDsl.Create(finalOutput, (builder, remoteOutput) =>
+            {
+                // local stages
+                var localInput = builder.Add(transmissionRef.Item2);
+                var compilerCeremony = builder.Add(Flow.Create<Google.Protobuf.ByteString>());
+                var local = builder.Add(fromLocalActors);
+                var merge = builder.Add(new Merge<Google.Protobuf.ByteString, Google.Protobuf.ByteString>(2, false));
+                builder.From(localInput.Outlet).To(merge.In(0));
+                builder.From(compilerCeremony.Outlet).To(merge.In(1));
+                builder.From(merge.Out).To(local.Inlet);
 
-                    // remote stages
-                    var remote = builder.Add(fromRemoteActors);
-                    builder.From(remote.Outlet).To(remoteOutput.Inlet);
+                // remote stages
+                var remote = builder.Add(fromRemoteActors);
+                builder.From(remote.Outlet).To(remoteOutput.Inlet);
 
-                    return new BidiShape<ByteString, Google.Protobuf.ByteString, Google.Protobuf.ByteString, ByteString>(remote.Inlet, remote.Outlet, compilerCeremony.Inlet, local.Outlet);
-                });
-
-
+                return new BidiShape<ByteString, Google.Protobuf.ByteString, Google.Protobuf.ByteString, ByteString>(remote.Inlet, remote.Outlet, compilerCeremony.Inlet, local.Outlet);
+            });
 
             return BidiFlow.FromGraph(dsl);
         }
