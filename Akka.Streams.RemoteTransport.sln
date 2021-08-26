@@ -7,8 +7,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Akka.Streams.RemoteTranspor
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Akka.Streams.RemoteTransport.Tests", "src\Akka.Streams.RemoteTransport.Tests\Akka.Streams.RemoteTransport.Tests.csproj", "{0F9B9BC6-9F86-40E8-BA9B-D27BF3AC7970}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Akka.Streams.RemoteTransport.Tests.Performance", "src\Akka.Streams.RemoteTransport.Tests.Performance\Akka.Streams.RemoteTransport.Tests.Performance.csproj", "{CAE7CA7C-0D0C-4FDA-BDE9-BE16A27343EF}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

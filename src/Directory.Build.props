@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
-    <Copyright>Copyright © 2017 Your Company</Copyright>
-    <Authors>Your Authors</Authors>
+    <Copyright>Copyright © 2017-2021 Aaron Stannard</Copyright>
+    <Authors>Aaronontheweb</Authors>
     <VersionPrefix>0.1.0</VersionPrefix>
     <PackageReleaseNotes>Placeholder</PackageReleaseNotes>
     <PackageIconUrl></PackageIconUrl>
@@ -10,6 +10,8 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <PropertyGroup>
+    <NetRunTime>net5</NetRunTime>
+    <AkkaVersion>1.4.21</AkkaVersion>
     <XunitVersion>2.3.0</XunitVersion>
     <TestSdkVersion>15.3.0</TestSdkVersion>
   </PropertyGroup>
